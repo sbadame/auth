@@ -45,4 +45,5 @@ The Auth server again sees the URL, but now with the cookie set. The Auth server
 * Support webauthN
 * Remove the need for a special /login URL.
 * Support having different ACLs for different users.
-
+* Support changing ACLs on the fly
+* Support using the backend to store the ACLs so that the frontend can stay stateless.
