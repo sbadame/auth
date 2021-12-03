@@ -5,7 +5,7 @@ _Seriously, it barely works..._
 
 This server authenticates users and applies ACLs to urls.
 
-Only Google Sign is supported.
+Only Google Sign In is supported.
 
 
 ## How it works
