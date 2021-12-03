@@ -11,12 +11,31 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strings"
 )
 
 var (
 	domainConfigJSON = flag.String("domainConfig", "", "Configuration for the oauth domain this is running on as JSON")
-	backendURL       = flag.String("backendURL", "", "Backend to forward requests to.")
+	routingConfig    = flag.String("routingConfig", "", "Configuration for routing requests. Comma seperated list of <path> -> <backend url>. Eg: /index -> http://localhost:8090/path")
 )
+
+type route struct {
+	Path    string
+	Backend *url.URL
+}
+
+func parseRoutingConfig(c string) ([]route, error) {
+	routes := make([]route, 0)
+	for _, r := range strings.Split(c, ",") {
+		pathAndURL := strings.SplitN(r, "->", 2)
+		u, err := url.Parse(strings.TrimSpace(pathAndURL[1]))
+		if err != nil {
+			return nil, err
+		}
+		routes = append(routes, route{strings.TrimSpace(pathAndURL[0]), u})
+	}
+	return routes, nil
+}
 
 type domainConfig struct {
 	ClientID     string
@@ -50,7 +69,7 @@ func (c *domainConfig) requireAuth(h http.Handler) http.HandlerFunc {
 		}
 
 		user := payload.Claims["email"]
-		for u := range c.AllowedUsers {
+		for _, u := range c.AllowedUsers {
 			if u == user {
 				h.ServeHTTP(w, req)
 				return
@@ -145,18 +164,14 @@ Email: ${profile.getEmail()}
 
 func main() {
 	flag.Parse()
+	var err error
 
 	// https://cloud.google.com/run/docs/reference/container-contract#port
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8090"
 	}
-
-	u, err := url.Parse(*backendURL)
-	if err != nil {
-		log.Fatal(err)
-	}
-	log.Printf("Backend URL: %s\n", u)
+	log.Printf("Serving on %s.\n", port)
 
 	if *domainConfigJSON == "" {
 		log.Fatal("-domainConfig is empty, exiting.")
@@ -166,11 +181,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("Domain configuration: %+v", dc)
+	log.Printf("Domain configuration: %+v\n", dc)
 
-	http.HandleFunc("/", dc.requireAuth(httputil.NewSingleHostReverseProxy(u)))
+	rc, err := parseRoutingConfig(*routingConfig)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Routing configuration: %q\n", rc)
+
+	for _, r := range rc {
+		http.HandleFunc(r.Path, dc.requireAuth(http.StripPrefix(r.Path, httputil.NewSingleHostReverseProxy(r.Backend))))
+	}
 	http.HandleFunc("/login", dc.login)
-
-	log.Printf("Serving on %s.\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

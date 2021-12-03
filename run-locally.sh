@@ -9,5 +9,6 @@ PORT=8091 ./auth \
    "loginURL": "http://raspberrypi:8091/login?target=",
    "allowedusers":["foo@bar.com"],
    "cookiedomain":"raspberrypi"
-}'
+ }' \
+ -routingConfig='/timeline -> http://raspberrypi:8070'
 

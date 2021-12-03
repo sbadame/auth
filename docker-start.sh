@@ -9,4 +9,4 @@ echo Tailscale started
 
 HTTP_PROXY=socks5://localhost:1055/ /app/auth \
   -domainConfig="${DOMAIN_CONFIG}" \
-  -backendURL="${BACKEND_URL}"
+  -routingConfig="${ROUTING_CONFIG}"
