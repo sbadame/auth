@@ -30,7 +30,7 @@ RUN mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates
 
- RUN update-ca-certificates
+RUN update-ca-certificates
 
 # Run tailscale + the auth server with the proper environment variables.
 CMD ["/app/docker-start.sh"]
