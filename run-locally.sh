@@ -11,4 +11,3 @@ PORT=8091 ./auth \
    "cookiedomain":"raspberrypi"
  }' \
  -routingConfig='/timeline -> http://raspberrypi:8070'
-

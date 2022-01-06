@@ -32,5 +32,7 @@ RUN apt-get update \
 
 RUN update-ca-certificates
 
+RUN apt-get update && apt-get install -y curl
+
 # Run tailscale + the auth server with the proper environment variables.
 CMD ["/app/docker-start.sh"]

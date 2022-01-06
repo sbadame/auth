@@ -71,7 +71,9 @@ func (c *domainConfig) requireAuth(h http.Handler) http.HandlerFunc {
 		user := payload.Claims["email"]
 		for _, u := range c.AllowedUsers {
 			if u == user {
+				log.Println("Sending request")
 				h.ServeHTTP(w, req)
+				log.Println("Got response")
 				return
 			}
 		}
@@ -190,7 +192,7 @@ func main() {
 	log.Printf("Routing configuration: %q\n", rc)
 
 	for _, r := range rc {
-		http.HandleFunc(r.Path, dc.requireAuth(http.StripPrefix(r.Path, httputil.NewSingleHostReverseProxy(r.Backend))))
+		http.HandleFunc(r.Path, dc.requireAuth(httputil.NewSingleHostReverseProxy(r.Backend)))
 	}
 	http.HandleFunc("/login", dc.login)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
