@@ -9,7 +9,6 @@ FROM alpine:3.12 as tailscale
 WORKDIR /app
 COPY . ./
 ENV TSFILE=tailscale_1.18.1_amd64.tgz
-# ENV TSFILE=tailscale_1.18.1_arm.tgz
 RUN wget https://pkgs.tailscale.com/stable/${TSFILE} && tar xzf ${TSFILE} --strip-components=1
 COPY . ./
 
@@ -18,7 +17,7 @@ COPY . ./
 
 FROM debian:latest
 
-# Copy binary to production image
+# Copy binary to image
 COPY --from=builder /app/auth /app/auth
 COPY --from=builder /app/docker-start.sh /app/docker-start.sh
 COPY --from=tailscale /app/tailscaled /app/tailscaled
@@ -30,7 +29,7 @@ RUN mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale
 RUN apt-get update \
  && apt-get install -y --no-install-recommends ca-certificates
 
- RUN update-ca-certificates
+RUN update-ca-certificates
 
 # Run tailscale + the auth server with the proper environment variables.
 CMD ["/app/docker-start.sh"]

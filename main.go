@@ -1,23 +1,83 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
-	"google.golang.org/api/idtoken"
 	"html/template"
 	"log"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"strings"
+	"time"
+
+	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"google.golang.org/api/idtoken"
 )
 
 var (
 	domainConfigJSON = flag.String("domainConfig", "", "Configuration for the oauth domain this is running on as JSON")
 	routingConfig    = flag.String("routingConfig", "", "Configuration for routing requests. Comma seperated list of <path> -> <backend url>. Eg: /index -> http://localhost:8090/path")
 )
+
+func init() {
+	// Disable log prefixes such as the default timestamp.
+	// Prefix text prevents the message from being parsed as JSON.
+	// A timestamp is added when shipping logs to Cloud Logging.
+	log.SetFlags(0)
+}
+
+type entry struct {
+	Message  string            `json:"message"`
+	Severity string            `json:"severity,omitempty"`
+	Labels   map[string]string `json:"logging.googleapis.com/labels,omitempty"`
+	Trace    string            `json:"logging.googleapis.com/trace,omitempty"`
+}
+
+func (e entry) String() string {
+	if e.Severity == "" {
+		e.Severity = "INFO"
+	}
+	if e.Labels == nil {
+		e.Labels = make(map[string]string)
+	}
+	e.Labels["pid"] = string(os.Getpid())
+	e.Labels["name"] = string("auth-server")
+	out, err := json.Marshal(e)
+	if err != nil {
+		log.Printf("json.Marshal: %v", err)
+	}
+	return string(out)
+}
+
+func logInfo(message string) {
+	log.Println(entry{Message: message})
+}
+
+func logFatal(message string) {
+	log.Fatal(entry{Message: message, Severity: "CRITICAL"})
+}
+
+func logReq(r *http.Request, message string) {
+	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
+	if projectID != "" {
+		traceHeader := r.Header.Get("X-Cloud-Trace-Context")
+		traceParts := strings.Split(traceHeader, "/")
+		if len(traceParts) > 0 && len(traceParts[0]) > 0 {
+			trace := fmt.Sprintf("projects/%s/traces/%s", projectID, traceParts[0])
+			log.Println(entry{Message: message, Trace: trace})
+			return
+		}
+	}
+	logInfo(message)
+}
 
 type route struct {
 	Path    string
@@ -71,7 +131,9 @@ func (c *domainConfig) requireAuth(h http.Handler) http.HandlerFunc {
 		user := payload.Claims["email"]
 		for _, u := range c.AllowedUsers {
 			if u == user {
+				logReq(req, "Auth: Request authorized, forwarding to backend.")
 				h.ServeHTTP(w, req)
+				logReq(req, "Auth: Got response. All done.")
 				return
 			}
 		}
@@ -107,7 +169,7 @@ func (c *domainConfig) login(w http.ResponseWriter, req *http.Request) {
 	}()
 
 	// From https://developers.google.com/identity/sign-in/web/sign-in
-	const tmpl = `
+	const tmpl = `<!DOCTYPE html>
     <html>
       <head>
         <meta name="google-signin-client_id" content="{{.ClientID}}">
@@ -171,27 +233,65 @@ func main() {
 	if port == "" {
 		port = "8090"
 	}
-	log.Printf("Serving on %s.\n", port)
+	logInfo(fmt.Sprintf("Serving on %s.", port))
 
 	if *domainConfigJSON == "" {
-		log.Fatal("-domainConfig is empty, exiting.")
+		logFatal("-domainConfig is empty, exiting.")
 	}
 	var dc domainConfig
 	err = json.Unmarshal([]byte(*domainConfigJSON), &dc)
 	if err != nil {
-		log.Fatal(err)
+		logFatal(err.Error())
 	}
-	log.Printf("Domain configuration: %+v\n", dc)
+	logInfo(fmt.Sprintf("Domain configuration: %+v", dc))
 
 	rc, err := parseRoutingConfig(*routingConfig)
 	if err != nil {
-		log.Fatal(err)
+		logFatal(err.Error())
 	}
-	log.Printf("Routing configuration: %q\n", rc)
+	logInfo(fmt.Sprintf("Routing configuration: %q", rc))
+
+	// Maybe create exporter.
+	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
+	if projectID != "" {
+		ctx := context.Background()
+		exporter, err := texporter.New(texporter.WithProjectID(projectID))
+		if err != nil {
+			logFatal(fmt.Sprintf("texporter.NewExporter: %v", err))
+		}
+		tp := sdktrace.NewTracerProvider(sdktrace.WithBatcher(exporter))
+		defer tp.ForceFlush(ctx) // flushes any pending spans
+		otel.SetTracerProvider(tp)
+		logInfo("Tracing has been configured.")
+	}
 
 	for _, r := range rc {
-		http.HandleFunc(r.Path, dc.requireAuth(http.StripPrefix(r.Path, httputil.NewSingleHostReverseProxy(r.Backend))))
+		rp := httputil.NewSingleHostReverseProxy(r.Backend)
+		// This is the default transport but with tracing and the timeout dropped from 30 seconds to 3.
+		rp.Transport = otelhttp.NewTransport(&http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			DialContext: (&net.Dialer{
+				Timeout:   3 * time.Second,
+				KeepAlive: 3 * time.Second,
+			}).DialContext,
+			ForceAttemptHTTP2:     true,
+			MaxIdleConns:          100,
+			IdleConnTimeout:       90 * time.Second,
+			TLSHandshakeTimeout:   10 * time.Second,
+			ExpectContinueTimeout: 1 * time.Second,
+		})
+
+		// Before moving on, lets establish a connection to the backend.
+		client := &http.Client{Transport: rp.Transport}
+		if _, err = client.Get(r.Backend.String()); err != nil {
+			logFatal(fmt.Sprintf("Unable to connect to a backend: %v", err))
+		}
+
+		h := otelhttp.NewHandler(rp, "ReverseProxyHandler")
+		h = http.StripPrefix(r.Path, h)
+		h = dc.requireAuth(h)
+		http.Handle(r.Path, h)
 	}
 	http.HandleFunc("/login", dc.login)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	logFatal(http.ListenAndServe(":"+port, nil).Error())
 }
