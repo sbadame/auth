@@ -1,11 +1,11 @@
-FROM golang:1.17-alpine3.13 as builder
+FROM --platform=linux/amd64 golang:1.19-alpine as builder
 WORKDIR /app
 COPY . ./
 ENV CGO_ENABLED=0
 RUN go build
 
 # From https://tailscale.com/kb/1108/cloudrun/
-FROM alpine:3.12 as tailscale
+FROM --platform=linux/amd64 alpine:3.12 as tailscale
 WORKDIR /app
 COPY . ./
 ENV TSFILE=tailscale_1.18.1_amd64.tgz
@@ -15,7 +15,7 @@ COPY . ./
 # FROM alpine:3.11
 # RUN apk update && apk add ca-certificates && rm -rf /var/cache/apk/*
 
-FROM debian:latest
+FROM --platform=linux/amd64 debian:latest
 
 # Copy binary to image
 COPY --from=builder /app/auth /app/auth
