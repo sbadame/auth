@@ -162,7 +162,9 @@ func main() {
 		logger.Fatal(err.Error())
 	}
 	logger.Printf("Domain configuration: %+v", &domainConfig)
-	http.HandleFunc("/login", domainConfig.login)
+	http.HandleFunc("/login", domainConfig.requireAuth(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "You're logged in.")
+	})))
 
 	// Setup the routing config.
 	routingConfig, err := parseRoutingConfig(*routingConfig)

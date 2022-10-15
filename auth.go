@@ -27,19 +27,17 @@ type domainConfig struct {
 
 func (c *domainConfig) requireAuth(logger *log.Logger, h http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		r := c.LoginURL + req.URL.String()
-
 		token, err := req.Cookie(c.CookieName)
 		if err != nil {
 			w.Header().Add("X-sandrio-auth-message", fmt.Sprintf("Missing cookie: %s", c.CookieName))
-			http.Redirect(w, req, r, http.StatusFound)
+			c.login(w, req)
 			return
 		}
 
 		payload, err := idtoken.Validate(req.Context(), token.Value, c.ClientID)
 		if err != nil {
 			w.Header().Add("X-sandrio-auth-message", fmt.Sprintf("Invalid cookie: %v", err))
-			http.Redirect(w, req, r, http.StatusFound)
+			c.login(w, req)
 			return
 		}
 
@@ -47,7 +45,7 @@ func (c *domainConfig) requireAuth(logger *log.Logger, h http.Handler) http.Hand
 		iss := payload.Claims["iss"]
 		if iss != "accounts.google.com" && iss != "https://accounts.google.com" {
 			w.Header().Add("X-sandrio-auth-message", fmt.Sprintf("Invalid iss found: %s", iss))
-			http.Redirect(w, req, r, http.StatusFound)
+			c.login(w, req)
 			return
 		}
 
@@ -66,13 +64,8 @@ func (c *domainConfig) requireAuth(logger *log.Logger, h http.Handler) http.Hand
 }
 
 func (c *domainConfig) login(w http.ResponseWriter, req *http.Request) {
-	// Parse out the final destination if one is set in the "target" query param.
-	err := req.ParseForm()
-	if err != nil {
-		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
-		return
-	}
-	target := req.FormValue("target")
+	// Never cache this page. It's the login page, not the destination.
+	w.Header().Add("Cache-Control", "no-cache")
 
 	reqDump, err := httputil.DumpRequest(req, true)
 	if err != nil {
@@ -142,7 +135,7 @@ Email: ${profile.getEmail()}
 		"LoginURL":     c.LoginURL,
 		"CookieName":   c.CookieName,
 		"CookieDomain": c.CookieDomain,
-		"Target":       target,
+		"Target":       req.URL.String(),
 		"ReqDump":      string(reqDump),
 		"Payload":      payload,
 	})
