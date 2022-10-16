@@ -3,7 +3,7 @@
 gofmt -w -s . || exit 'Error running gofmt.'
 
 go build -o bin/test_server test/test_server.go && \
-  PORT=8092 ./test_server &
+  PORT=8092 ./bin/test_server &
 
 go build -o bin/auth cmd/auth/main.go && \
 PORT=8091 ./bin/auth \
