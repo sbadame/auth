@@ -75,7 +75,7 @@ func main() {
 
 	flag.Parse()
 	http.HandleFunc("/flags", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "<html><body><pre>%s</pre></body></html>", strings.Join(os.Args, "\n"))
+		fmt.Fprintf(w, "<html><body><div style='font-family:monospace'>%s</pre></body></html>", strings.Join(os.Args, "<br>"))
 	}))
 
 	var err error
