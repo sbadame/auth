@@ -1,7 +1,8 @@
-package main
+package auth
 
 import (
 	"fmt"
+	"github.com/sbadame/auth/internal/logging"
 	"google.golang.org/api/idtoken"
 	"html/template"
 	"log"
@@ -9,7 +10,7 @@ import (
 	"net/http/httputil"
 )
 
-type domainConfig struct {
+type DomainConfig struct {
 	ClientID     string
 	LoginURL     string
 	CookieName   string
@@ -25,7 +26,7 @@ type domainConfig struct {
 	CertificateDirectory string
 }
 
-func (c *domainConfig) requireAuth(logger *log.Logger, h http.Handler) http.HandlerFunc {
+func (c *DomainConfig) RequireAuth(logger *log.Logger, h http.Handler) http.HandlerFunc {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		token, err := req.Cookie(c.CookieName)
 		if err != nil {
@@ -54,16 +55,16 @@ func (c *domainConfig) requireAuth(logger *log.Logger, h http.Handler) http.Hand
 			if u != user {
 				continue
 			}
-			logReq(logger, req, "Auth: Request authorized, forwarding to backend.")
+			logging.Print(logger, req, "Auth: Request authorized, forwarding to backend.")
 			h.ServeHTTP(w, req)
-			logReq(logger, req, "Auth: Got response. All done.")
+			logging.Print(logger, req, "Auth: Got response. All done.")
 			return
 		}
 		http.Error(w, fmt.Sprintf("%s does not have permission to view this page.", user), http.StatusForbidden)
 	})
 }
 
-func (c *domainConfig) login(w http.ResponseWriter, req *http.Request) {
+func (c *DomainConfig) login(w http.ResponseWriter, req *http.Request) {
 	// Never cache this page. It's the login page, not the destination.
 	w.Header().Add("Cache-Control", "no-cache")
 

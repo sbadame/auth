@@ -2,7 +2,7 @@ FROM --platform=linux/amd64 golang:1.19-alpine as builder
 WORKDIR /app
 COPY . ./
 ENV CGO_ENABLED=0
-RUN go build
+RUN go build -o bin/auth cmd/auth/main.go
 
 # From https://tailscale.com/kb/1108/cloudrun/
 FROM --platform=linux/amd64 alpine:3.12 as tailscale
@@ -18,8 +18,8 @@ COPY . ./
 FROM --platform=linux/amd64 debian:latest
 
 # Copy binary to image
-COPY --from=builder /app/auth /app/auth
-COPY --from=builder /app/docker-start.sh /app/docker-start.sh
+COPY --from=builder /app/bin/auth /app/auth
+COPY --from=builder /app/scripts/docker-start.sh /app/docker-start.sh
 COPY --from=tailscale /app/tailscaled /app/tailscaled
 COPY --from=tailscale /app/tailscale /app/tailscale
 RUN mkdir -p /var/run/tailscale /var/cache/tailscale /var/lib/tailscale

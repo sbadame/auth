@@ -8,7 +8,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"net/http/httputil"
 	"net/url"
 	"os"
 	"strconv"
@@ -20,73 +19,16 @@ import (
 	"go.opentelemetry.io/otel"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"golang.org/x/crypto/acme/autocert"
+
+	"github.com/sbadame/auth/internal/auth"
+	"github.com/sbadame/auth/internal/logging"
+	"github.com/sbadame/auth/internal/reverseproxy"
 )
 
 var (
 	domainConfigJSON = flag.String("domainConfig", "", "Configuration for the oauth domain this is running on as JSON")
 	routingConfig    = flag.String("routingConfig", "", "Configuration for routing requests. Comma seperated list of <path> -> <backend url>. Eg: /index -> http://localhost:8090/path")
 )
-
-type entry struct {
-	Message  string            `json:"message"`
-	Severity string            `json:"severity,omitempty"`
-	Labels   map[string]string `json:"logging.googleapis.com/labels,omitempty"`
-	Trace    string            `json:"logging.googleapis.com/trace,omitempty"`
-}
-
-func (e *entry) init() {
-	if e.Severity == "" {
-		e.Severity = "INFO"
-	}
-	if e.Labels == nil {
-		e.Labels = make(map[string]string)
-	}
-	e.Labels["pid"] = strconv.Itoa(os.Getpid())
-	e.Labels["name"] = "auth-server"
-}
-
-func (e *entry) String() string {
-	e.init()
-	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
-
-	var out []byte
-	var err error
-	if projectID != "" {
-		out, err = json.MarshalIndent(e, "", "  ")
-	} else {
-		out, err = json.Marshal(e)
-	}
-
-	if err != nil {
-		log.Printf("json.MarshalIndent: %v", err)
-	}
-	return string(out)
-}
-
-func logReq(logger *log.Logger, r *http.Request, message string) {
-	projectID := os.Getenv("GOOGLE_CLOUD_PROJECT")
-	if projectID != "" {
-		traceHeader := r.Header.Get("X-Cloud-Trace-Context")
-		traceParts := strings.Split(traceHeader, "/")
-		if len(traceParts) > 0 && len(traceParts[0]) > 0 {
-			trace := fmt.Sprintf("projects/%s/traces/%s", projectID, traceParts[0])
-			logger.Println(entry{Message: message, Trace: trace})
-			return
-		}
-	}
-	logger.Println(message)
-}
-
-func logHandler(logger *log.Logger, h http.Handler) http.HandlerFunc {
-	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		dump, err := httputil.DumpRequest(req, false)
-		if err != nil {
-			logger.Fatalln(err.Error())
-		}
-		logReq(logger, req, fmt.Sprintf("Request %q", dump))
-		h.ServeHTTP(w, req)
-	})
-}
 
 type route struct {
 	Path    string
@@ -155,14 +97,14 @@ func main() {
 	}))
 
 	// If we're configured to run behind a domain, set that up
-	var domainConfig domainConfig
+	var domainConfig auth.DomainConfig
 	if *domainConfigJSON == "" {
 		logger.Println("-domainConfig is empty. Running with no auth.")
 	} else if err = json.Unmarshal([]byte(*domainConfigJSON), &domainConfig); err != nil {
 		logger.Fatal(err.Error())
 	}
 	logger.Printf("Domain configuration: %+v", &domainConfig)
-	http.HandleFunc("/login", domainConfig.requireAuth(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/login", domainConfig.RequireAuth(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "You're logged in.")
 	})))
 
@@ -189,7 +131,7 @@ func main() {
 	client := &http.Client{Transport: transport}
 
 	for _, r := range routingConfig {
-		reverseProxy := &ReverseProxy{
+		reverseProxy := &reverseproxy.ReverseProxy{
 			Backend: r.Backend,
 			Client:  client,
 			Logger:  logger,
@@ -199,11 +141,11 @@ func main() {
 			logger.Fatalf(err.Error())
 		}
 
-		h := logHandler(log.New(log.Writer(), "ReverseProxyHandler - ", log.Flags()), otelhttp.NewHandler(reverseProxy, "ReverseProxyHandler"))
-		h = logHandler(log.New(log.Writer(), "StripPrefixHandler - ", log.Flags()), http.StripPrefix(r.Path, h))
+		h := logging.Handler(log.New(log.Writer(), "ReverseProxyHandler - ", log.Flags()), otelhttp.NewHandler(reverseProxy, "ReverseProxyHandler"))
+		h = logging.Handler(log.New(log.Writer(), "StripPrefixHandler - ", log.Flags()), http.StripPrefix(r.Path, h))
 		if domainConfig.ClientID != "" {
 			l := log.New(log.Writer(), "AuthHandler - ", log.Flags())
-			h = logHandler(l, domainConfig.requireAuth(l, h))
+			h = logging.Handler(l, domainConfig.RequireAuth(l, h))
 		}
 		http.Handle(r.Path, h)
 		logger.Printf("Registered %s --> %s", r.Path, r.Backend)

@@ -1,11 +1,12 @@
 #!/bin/bash
 
-go build test/test_server.go && \
+gofmt -w -s . || exit 'Error running gofmt.'
+
+go build -o bin/test_server test/test_server.go && \
   PORT=8092 ./test_server &
 
-go fmt && \
-go build && \
-PORT=8091 ./auth \
+go build -o bin/auth cmd/auth/main.go && \
+PORT=8091 ./bin/auth \
  -routingConfig='/test -> http://localhost:8092, /timeline -> http://100.103.175.63:8000'
 # -domainConfig='{
 #   "clientID":"477755167294-4lhig4thi64krcd8oj5jgtncklccgeef.apps.googleusercontent.com",
