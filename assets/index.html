@@ -1,0 +1,89 @@
+<html>
+  <head>
+    <title>Auth to the server.</title>
+    <script>
+      // TODO: THIS IS ACTUALLY SUPPOSED TO BE SERVER LOGIC.
+      const challengeBytes = new Uint8Array(16);
+      window.crypto.getRandomValues(challengeBytes);
+
+      // Following the overview from https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#registration
+      function RegisterUser() {
+        // The first step already happened, we have the credential preferences of the the auth server embedded into this script.
+        const step0 = Step0_AuthServerResponse();
+
+        // credentials.create is what actually triggers the U2F to create a new key-pair with the auth server's requirements.
+        // https://developer.mozilla.org/en-US/docs/Web/API/PublicKeyCredential
+        const publicKeyCredential = await navigator.credentials.create({ publicKey: step0 });
+
+        const step6Response = Step6_AuthServerValidatesResponse(publicKeyCredential);
+
+        if (step6Response.isOk()) {
+           window.localStorage.setItem('userid', publicKeyCredential.rawId);
+        } else {
+           console.log(step6Response.message());
+        }
+      }
+
+      function Step0_AuthServerResponse() {
+        return {
+          challenge: challengeBytes,
+          rp: { name: "auth.sandr.io" },
+          user: { id: 42 },
+          challenge: challengeBytes,
+          parameters: [ { type: "public-key", algorithm: "ES256"} ],
+          timeout: 60 * 1000,  // 1 minute
+          excludeList: [] // No excludeList
+        };
+      }
+
+      function Step6_AuthServerValidatesResponse(publicKeyCredential) {
+        if (publicKeyCredential.type !== 'public-key') throw "Didn't get a Public Key from credentials.create: " + publicKeyCredential.type;
+        const userId = publicKeyCredential.rawId;
+        const clientData = publicKeyCredential.response.clientDataJSON
+
+        // Send data to the server to verify...
+        //   1. Verifying that the challenge is the same as the challenge that was sent
+        //   2. Ensuring that the origin was the origin expected
+        //   3. Validating that the signature over the clientDataHash and the attestation using the certificate chain for that specific model of the authenticator
+        return {
+          isOk: () => true,
+          message: () => '',
+        }
+      }
+
+      // https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#authentication
+      function AuthenticateUser() {
+        const step0 = Step0_AuthServerResponse_Authenticate();
+
+        // credentials.get is what actually triggers the U2F to fetch a key-pair matching the auth server requirements.
+        // https://developer.mozilla.org/en-US/docs/Web/API/CredentialsContainer/get
+        const publicKeyCredential = await navigator.credentials.get({publicKey: step0});
+
+        const step6Response = Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential);
+        if (!step6Response.isOk()) {
+           console.log(step6Response.message());
+        } else {
+           console.log('Logged in', publicKeyCredential.response.clientDataJSON);
+        }
+      }
+
+      function Step0_AuthServerResponse_Authenticate() {
+        return {
+          challenge: challengeBytes,
+          timeout: 60 * 1000, // 1 minute
+          allowList: [
+            {
+              type: "public-key",
+              id: Uint8Array.from(window.localStorage.getItem('userid')),
+              transports: ["usb", "nfc", "ble"],
+            },
+          ]
+        };
+      }
+
+    </script>
+  </head>
+  <body>
+
+  </body>
+</html>
