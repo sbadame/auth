@@ -7,7 +7,7 @@
       window.crypto.getRandomValues(challengeBytes);
 
       // Following the overview from https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#registration
-      function RegisterUser() {
+      async function RegisterNewUser() {
         // The first step already happened, we have the credential preferences of the the auth server embedded into this script.
         const step0 = Step0_AuthServerResponse();
 
@@ -25,14 +25,30 @@
       }
 
       function Step0_AuthServerResponse() {
+        // https://w3c.github.io/webauthn/#dictdef-publickeycredentialcreationoptions
         return {
           challenge: challengeBytes,
-          rp: { name: "auth.sandr.io" },
-          user: { id: 42 },
+          rp: {
+            name: 'Sandr.io (localhost)',
+            id: 'localhost'
+          },
+          user: {
+            id: new TextEncoder().encode("sandro"),
+            displayName: 'Sandro!',
+            name: 'Sandro'
+          },
           challenge: challengeBytes,
-          parameters: [ { type: "public-key", algorithm: "ES256"} ],
+          // publicKey.pubKeyCredParams is missing at least one of the default algorithm identifiers: ES256 and RS256. This can result in registration failures on incompatible authenticators. See https://chromium.googlesource.com/chromium/src/+/master/content/browser/webauth/pub_key_cred_params.md for details
+          pubKeyCredParams: [ { alg: -7 /* cose_alg_ECDSA_w_SHA256 */, type: 'public-key' } ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'cross-platform',
+            requireResidentKey: false,
+            userVerification: 'preferred'
+          },
+          attestation: undefined,
           timeout: 60 * 1000,  // 1 minute
-          excludeList: [] // No excludeList
+          excludeCredentials: [], // No excludeList
+          extensions: { "exts": true }
         };
       }
 
@@ -52,7 +68,7 @@
       }
 
       // https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#authentication
-      function AuthenticateUser() {
+      async function AuthenticateExistingUser() {
         const step0 = Step0_AuthServerResponse_Authenticate();
 
         // credentials.get is what actually triggers the U2F to fetch a key-pair matching the auth server requirements.
@@ -68,8 +84,11 @@
       }
 
       function Step0_AuthServerResponse_Authenticate() {
+        // https://w3c.github.io/webauthn/#dictdef-publickeycredentialrequestoptions
+        // publicKey.userVerification was not set to any value in Web Authentication navigator.credentials.get() call. This defaults to 'preferred', which is probably not what you want. If in doubt, set to 'discouraged'. See https://chromium.googlesource.com/chromium/src/+/master/content/browser/webauth/uv_preferred.md for details.
         return {
           challenge: challengeBytes,
+          rpId: 'localhost',
           timeout: 60 * 1000, // 1 minute
           allowList: [
             {
@@ -81,9 +100,34 @@
         };
       }
 
+      function hasExistingHistory() {
+        return window.localStorage.getItem('userid') !== null;
+      }
+
     </script>
   </head>
   <body>
+    <h1>WebAuthN</h1>
+    <button id="create">Create Account</button>
+    <button id="login">Login</button>
+    <div id="log"></div>
+    <script>
+      document.getElementById('create').onclick = () => {
+        console.log('Create Account');
+        RegisterNewUser();
+      };
 
+      document.getElementById('login').onclick = () => {
+        console.log('Login');
+        AuthenticateExistingUser();
+      };
+
+      if (hasExistingHistory()) {
+        document.getElementById('log').innerText = 'There is an existing user.';
+      } else {
+        document.getElementById('log').innerText = 'No existing user records found.';
+      }
+
+    </script>
   </body>
 </html>
