@@ -2,6 +2,11 @@
   <head>
     <title>Auth to the server.</title>
     <script>
+
+      // TODO: Figure out how to store the public key across sessions.
+      // localStorage requires me to figure out how to serialize an array to a string.
+      RAW_ID = null;
+
       // TODO: THIS IS ACTUALLY SUPPOSED TO BE SERVER LOGIC.
       const challengeBytes = new Uint8Array(16);
       window.crypto.getRandomValues(challengeBytes);
@@ -14,11 +19,13 @@
         // credentials.create is what actually triggers the U2F to create a new key-pair with the auth server's requirements.
         // https://developer.mozilla.org/en-US/docs/Web/API/PublicKeyCredential
         const publicKeyCredential = await navigator.credentials.create({ publicKey: step0 });
+        console.log('navigator.credentials.create', {publicKey: step0}, publicKeyCredential);
 
         const step6Response = Step6_AuthServerValidatesResponse(publicKeyCredential);
 
         if (step6Response.isOk()) {
-           window.localStorage.setItem('userid', publicKeyCredential.rawId);
+           RAW_ID = publicKeyCredential.rawId;
+           window.localStorage.setItem('userid', publicKeyCredential.id);
         } else {
            console.log(step6Response.message());
         }
@@ -30,31 +37,31 @@
           challenge: challengeBytes,
           rp: {
             name: 'Sandr.io (localhost)',
-            id: 'localhost'
           },
           user: {
             id: new TextEncoder().encode("sandro"),
             displayName: 'Sandro!',
             name: 'Sandro'
           },
-          challenge: challengeBytes,
-          // publicKey.pubKeyCredParams is missing at least one of the default algorithm identifiers: ES256 and RS256. This can result in registration failures on incompatible authenticators. See https://chromium.googlesource.com/chromium/src/+/master/content/browser/webauth/pub_key_cred_params.md for details
-          pubKeyCredParams: [ { alg: -7 /* cose_alg_ECDSA_w_SHA256 */, type: 'public-key' } ],
+          // https://w3c.github.io/webauthn/#sctn-alg-identifier
+          pubKeyCredParams: [
+            { type: 'public-key', alg: -7 /* ES256 */ },
+            { type: 'public-key', alg: -257 /* RS256 */ },
+          ],
           authenticatorSelection: {
-            authenticatorAttachment: 'cross-platform',
+            authenticatorAttachment: 'cross-platform', // Enables devices that are removeable.
             requireResidentKey: false,
             userVerification: 'preferred'
           },
-          attestation: undefined,
           timeout: 60 * 1000,  // 1 minute
           excludeCredentials: [], // No excludeList
-          extensions: { "exts": true }
+          extensions: { exts: true }
         };
       }
 
       function Step6_AuthServerValidatesResponse(publicKeyCredential) {
         if (publicKeyCredential.type !== 'public-key') throw "Didn't get a Public Key from credentials.create: " + publicKeyCredential.type;
-        const userId = publicKeyCredential.rawId;
+        const userId = publicKeyCredential.id;
         const clientData = publicKeyCredential.response.clientDataJSON
 
         // Send data to the server to verify...
@@ -73,7 +80,9 @@
 
         // credentials.get is what actually triggers the U2F to fetch a key-pair matching the auth server requirements.
         // https://developer.mozilla.org/en-US/docs/Web/API/CredentialsContainer/get
+        console.log('navigator.credentials.get', {publicKey: step0});
         const publicKeyCredential = await navigator.credentials.get({publicKey: step0});
+        console.log('navigator.credentials.get', {publicKey: step0}, publicKeyCredential);
 
         const step6Response = Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential);
         if (!step6Response.isOk()) {
@@ -85,18 +94,16 @@
 
       function Step0_AuthServerResponse_Authenticate() {
         // https://w3c.github.io/webauthn/#dictdef-publickeycredentialrequestoptions
-        // publicKey.userVerification was not set to any value in Web Authentication navigator.credentials.get() call. This defaults to 'preferred', which is probably not what you want. If in doubt, set to 'discouraged'. See https://chromium.googlesource.com/chromium/src/+/master/content/browser/webauth/uv_preferred.md for details.
         return {
           challenge: challengeBytes,
-          rpId: 'localhost',
-          timeout: 60 * 1000, // 1 minute
-          allowList: [
+          userVerification: 'discouraged', // https://www.w3.org/TR/webauthn-2/#enum-userVerificationRequirement
+          allowCredentials: [
             {
               type: "public-key",
-              id: Uint8Array.from(window.localStorage.getItem('userid')),
+              id: Uint8Array.from(RAW_ID),
               transports: ["usb", "nfc", "ble"],
             },
-          ]
+          ],
         };
       }
 
@@ -123,7 +130,7 @@
       };
 
       if (hasExistingHistory()) {
-        document.getElementById('log').innerText = 'There is an existing user.';
+        document.getElementById('log').innerText = 'There is an existing user: ' + window.localStorage.getItem('userid');
       } else {
         document.getElementById('log').innerText = 'No existing user records found.';
       }
