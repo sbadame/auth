@@ -3,6 +3,8 @@
     <title>Auth to the server.</title>
     <script>
 
+      const STATUS_OK = {isOk: () => true, message: () => ''};
+
       // TODO: Figure out how to store the public key across sessions.
       // localStorage requires me to figure out how to serialize an array to a string.
       RAW_ID = null;
@@ -68,10 +70,7 @@
         //   1. Verifying that the challenge is the same as the challenge that was sent
         //   2. Ensuring that the origin was the origin expected
         //   3. Validating that the signature over the clientDataHash and the attestation using the certificate chain for that specific model of the authenticator
-        return {
-          isOk: () => true,
-          message: () => '',
-        }
+        return STATUS_OK;
       }
 
       // https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#authentication
@@ -100,17 +99,20 @@
           allowCredentials: [
             {
               type: "public-key",
-              id: Uint8Array.from(RAW_ID),
+              id: RAW_ID,
               transports: ["usb", "nfc", "ble"],
             },
           ],
         };
       }
 
+      function Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential) {
+        return STATUS_OK;
+      }
+
       function hasExistingHistory() {
         return window.localStorage.getItem('userid') !== null;
       }
-
     </script>
   </head>
   <body>
