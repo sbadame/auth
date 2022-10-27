@@ -74,9 +74,6 @@ func main() {
 	}
 
 	flag.Parse()
-	http.HandleFunc("/flags", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "<html><body><div style='font-family:monospace'>%s</pre></body></html>", strings.Join(os.Args, "<br>"))
-	}))
 
 	var err error
 
@@ -86,34 +83,46 @@ func main() {
 		port = "8090"
 	}
 
-	// Have an easy to access path for ensuring that this code is even running.
-	// /healthz is a reserved URL on Cloud Run: https://cloud.google.com/run/docs/issues#ah
-	http.HandleFunc("/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "ok")
-	}))
-
-	http.HandleFunc("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "Welcome to the auth server.")
-	}))
-
-	// If we're configured to run behind a domain, set that up
-	var domainConfig auth.DomainConfig
-	if *domainConfigJSON == "" {
-		logger.Println("-domainConfig is empty. Running with no auth.")
-	} else if err = json.Unmarshal([]byte(*domainConfigJSON), &domainConfig); err != nil {
-		logger.Fatal(err.Error())
-	}
-	logger.Printf("Domain configuration: %+v", &domainConfig)
-	http.HandleFunc("/login", domainConfig.RequireAuth(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintln(w, "You're logged in.")
-	})))
-
 	// Setup the routing config.
 	routingConfig, err := parseRoutingConfig(*routingConfig)
 	if err != nil {
 		logger.Fatal(err.Error())
 	}
 	logger.Printf("Routing configuration: %q", routingConfig)
+
+	// If we're configured to run behind a domain, set that up
+	var domainConfig auth.DomainConfig
+	if *domainConfigJSON == "" {
+		logger.Println("-domainConfig is empty. Running without Google Sign-in.")
+	} else if err = json.Unmarshal([]byte(*domainConfigJSON), &domainConfig); err != nil {
+		logger.Fatal(err.Error())
+	}
+	logger.Printf("Domain configuration: %+v", &domainConfig)
+
+	http.HandleFunc("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "Welcome to the auth server.")
+	}))
+	logger.Printf("Registered /")
+
+	http.HandleFunc("/login", domainConfig.RequireAuth(logger, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "You're logged in.")
+	})))
+	logger.Printf("Registered /login")
+
+	http.Handle("/verify", auth.WebAuthNValidateResponseHandler())
+	logger.Printf("Registered /verify for handling WebAuthN Server validation.")
+
+	http.HandleFunc("/flags", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintf(w, "<html><body><div style='font-family:monospace'>%s</pre></body></html>", strings.Join(os.Args, "<br>"))
+	}))
+	logger.Printf("Registered /flags")
+
+	// Have an easy to access path for ensuring that this code is even running.
+	// /healthz is a reserved URL on Cloud Run: https://cloud.google.com/run/docs/issues#ah
+	http.HandleFunc("/health", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprintln(w, "ok")
+	}))
+	logger.Printf("Registered /health")
 
 	transport := otelhttp.NewTransport(&http.Transport{
 		Proxy: http.ProxyFromEnvironment,

@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>sandr.io|Login</title>
+    <!-- START Google sign in -->
+    <script>
+      function onSignIn(googleUser) {
+        var profile = googleUser.getBasicProfile();
+        const authResponse = googleUser.getAuthResponse(true);
+        document.getElementById('loginData').innerText = `
+AccessToken: ${authResponse.access_token}
+IDToken: ${authResponse.id_token}
+ID:   ${profile.getId()}
+Name: ${profile.getName()}
+Image URL: ${profile.getImageUrl()}
+Email: ${profile.getEmail()}`;
+          document.cookie = '{{.CookieName}}=' + authResponse.id_token + '; Domain={{.CookieDomain}}; Secure; SameSite=Strict';
+          window.location.reload();
+      }
+    </script>
+    <!-- END Google sign in -->
+    <!-- START WebAuthn -->
+    <script>
+      const STATUS_OK = {isOk: () => true, message: () => ''};
+
+      function arrayToBase64Encoded(dataArray) {
+        return btoa(String.fromCharCode(...new Uint8Array(dataArray)));
+      }
+
+      function base64EncodedToArray(encoded) {
+        return Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+      }
+
+      // https://w3c.github.io/webauthn/#sctn-cryptographic-challenges
+      const challengeBytes = new Uint8Array({{.Challenge}});
+
+      // Following the overview from https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#registration
+      async function RegisterNewUser() {
+        // The first step already happened, we have the credential preferences of the the auth server embedded into this script.
+        const step0 = Step0_AuthServerResponse();
+
+        // credentials.create is what actually triggers the U2F to create a new key-pair with the auth server's requirements.
+        // https://developer.mozilla.org/en-US/docs/Web/API/PublicKeyCredential
+        const publicKeyCredential = await navigator.credentials.create({ publicKey: step0 });
+        console.log('navigator.credentials.create', {publicKey: step0}, publicKeyCredential);
+
+        const step6Response = await Step6_AuthServerValidatesResponse(publicKeyCredential);
+        if (step6Response.ok) {
+           window.localStorage.setItem('userid', arrayToBase64Encoded(publicKeyCredential.rawId));
+        } else {
+           console.log(step6Response.message());
+        }
+      }
+
+      function Step0_AuthServerResponse() {
+        // https://w3c.github.io/webauthn/#dictdef-publickeycredentialcreationoptions
+        return {
+          challenge: challengeBytes,
+          rp: {
+            name: 'Sandr.io (localhost)',
+          },
+          user: {
+            id: new TextEncoder().encode("sandro"),
+            displayName: 'Sandro!',
+            name: 'Sandro'
+          },
+          // https://w3c.github.io/webauthn/#sctn-alg-identifier
+          pubKeyCredParams: [
+            { type: 'public-key', alg: -7 /* ES256 */ },
+            { type: 'public-key', alg: -257 /* RS256 */ },
+          ],
+          authenticatorSelection: {
+            authenticatorAttachment: 'cross-platform', // Enables devices that are removeable.
+            requireResidentKey: false,
+            userVerification: 'preferred'
+          },
+          timeout: 60 * 1000,  // 1 minute
+          excludeCredentials: [], // No excludeList
+          extensions: { exts: true }
+        };
+      }
+
+      async function Step6_AuthServerValidatesResponse(publicKeyCredential) {
+        if (publicKeyCredential.type !== 'public-key') throw "Didn't get a Public Key from credentials.create: " + publicKeyCredential.type;
+        const userId = publicKeyCredential.id;
+        const clientData = publicKeyCredential.response.clientDataJSON;
+
+        // Send data to the server to verify...
+        //   1. Verifying that the challenge is the same as the challenge that was sent
+        //   2. Ensuring that the origin was the origin expected
+        //   3. Validating that the signature over the clientDataHash and the attestation using the certificate chain for that specific model of the authenticator
+        return await fetch(new URL('/verify', window.location.origin));
+      }
+
+      // https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#authentication
+      async function AuthenticateExistingUser() {
+        const step0 = Step0_AuthServerResponse_Authenticate();
+
+        // credentials.get is what actually triggers the U2F to fetch a key-pair matching the auth server requirements.
+        // https://developer.mozilla.org/en-US/docs/Web/API/CredentialsContainer/get
+        console.log('navigator.credentials.get', {publicKey: step0});
+        const publicKeyCredential = await navigator.credentials.get({publicKey: step0});
+        console.log('navigator.credentials.get', {publicKey: step0}, publicKeyCredential);
+
+        const step6Response = Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential);
+        if (!step6Response.isOk()) {
+           console.log(step6Response.message());
+        } else {
+           console.log('Logged in', publicKeyCredential.response.clientDataJSON);
+        }
+      }
+
+      function Step0_AuthServerResponse_Authenticate() {
+        // https://w3c.github.io/webauthn/#dictdef-publickeycredentialrequestoptions
+        return {
+          challenge: challengeBytes,
+          userVerification: 'discouraged', // https://www.w3.org/TR/webauthn-2/#enum-userVerificationRequirement
+          allowCredentials: [
+            {
+              type: "public-key",
+              id: base64EncodedToArray(window.localStorage.getItem('userid')),
+              transports: ["usb", "nfc", "ble"],
+            },
+          ],
+        };
+      }
+
+      function Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential) {
+        return STATUS_OK;
+      }
+
+      function hasExistingHistory() {
+        return window.localStorage.getItem('userid') !== null;
+      }
+    </script>
+    <!-- END WebAuthn -->
+  </head>
+  <body>
+    <!-- START WebAuthn -->
+    <h1>WebAuthN</h1>
+    <button id="create">Create Account</button>
+    <button id="login">Login</button>
+    <div id="log"></div>
+    <script>
+      document.getElementById('create').onclick = () => {
+        console.log('Create Account');
+        RegisterNewUser();
+      };
+
+      document.getElementById('login').onclick = () => {
+        console.log('Login');
+        AuthenticateExistingUser();
+      };
+
+      if (hasExistingHistory()) {
+        document.getElementById('log').innerText = 'There is an existing user: ' + window.localStorage.getItem('userid');
+      } else {
+        document.getElementById('log').innerText = 'No existing user records found.';
+      }
+    </script>
+    <!-- END WebAuthn -->
+
+    <!-- START Google -->
+    <!-- https://developers.google.com/identity/gsi/web/tools/configurator -->
+    <!-- https://developers.google.com/identity/gsi/web/guides/migration#the_new_way -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <div id="g_id_onload"
+         data-client_id="{{.ClientID}}"
+         data-context="signup"
+         data-ux_mode="popup"
+         data-callback="onSignIn"
+         data-auto_select="true"
+         data-itp_support="true">
+    </div>
+    <div class="g_id_signin"
+         data-type="standard"
+         data-shape="pill"
+         data-theme="filled_black"
+         data-text="signin_with"
+         data-size="small"
+         data-logo_alignment="left">
+    </div>
+<!-- END Google -->
+
+    <div>
+      <h3>Login Data Debug</h3>
+      <pre id="loginData"></pre>
+    </div>
+    <div>
+      <h3>HTTP Request Debug</h3>
+      <pre>{{.ReqDump}}</pre>
+    </div>
+    <div>
+      <h3>Payload debug</h3>
+      <pre>{{.Payload}}</pre>
+    </div>
+  </body>
+</html>

@@ -37,11 +37,6 @@ func (p *ReverseProxy) HealthCheck() error {
 	}
 
 	backendResp.Body.Close()
-	dump, err := httputil.DumpResponse(backendResp, false)
-	if err != nil {
-		return fmt.Errorf("Unable to dump response from backend: %v", err)
-	}
-	p.Logger.Printf("Backend %s Got response: %q", p.Backend, dump)
 	return nil
 }
 

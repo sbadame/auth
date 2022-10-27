@@ -1,14 +1,19 @@
 package auth
 
 import (
+	_ "embed"
 	"fmt"
 	"github.com/sbadame/auth/internal/logging"
 	"google.golang.org/api/idtoken"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/http/httputil"
 )
+
+//go:embed login.html.tmpl
+var loginHTMLTmpl string
 
 type DomainConfig struct {
 	ClientID     string
@@ -86,47 +91,12 @@ func (c *DomainConfig) login(w http.ResponseWriter, req *http.Request) {
 		return fmt.Sprintf("%+v", payload)
 	}()
 
-	// From https://developers.google.com/identity/sign-in/web/sign-in
-	const tmpl = `<!DOCTYPE html>
-  <html>
-    <head>
-      <meta name="google-signin-client_id" content="{{.ClientID}}">
-      <script src="https://apis.google.com/js/platform.js" async defer></script>
-      <script>
-	function onSignIn(googleUser) {
-	  var profile = googleUser.getBasicProfile();
-	  const authResponse = googleUser.getAuthResponse(true);
-	  document.getElementById('loginData').innerText = ` + "`" + `
-AccessToken: ${authResponse.access_token}
-IDToken: ${authResponse.id_token}
-ID:   ${profile.getId()}
-Name: ${profile.getName()}
-Image URL: ${profile.getImageUrl()}
-Email: ${profile.getEmail()}
-	  ` + "`" + `;
-	  document.cookie = '{{.CookieName}}=' + authResponse.id_token + '; Domain={{.CookieDomain}}; Secure; SameSite=Strict';
-	  if ('{{.Target}}') window.location = '{{.Target}}';
-	}
-      </script>
-    </head>
-    <body>
-      <div class="g-signin2" data-onsuccess="onSignIn"></div>
-      <div>
-	<h3>Login Data Debug</h3>
-	<pre id="loginData"></pre>
-      </div>
-      <div>
-	<h3>HTTP Request Debug</h3>
-	<pre>{{.ReqDump}}</pre>
-      </div>
-      <div>
-	<h3>Payload debug</h3>
-	<pre>{{.Payload}}</pre>
-      </div>
-    </body>
-  </html>`
+	// Generate 16 challenge bytes
+	// https://w3c.github.io/webauthn/#sctn-cryptographic-challenges
+	var challenge [16]byte
+	_, _ = rand.Read(challenge[:])
 
-	t, err := template.New("login").Parse(tmpl)
+	t, err := template.New("login").Parse(loginHTMLTmpl)
 	if err != nil {
 		http.Error(w, fmt.Sprint(err), http.StatusInternalServerError)
 		return
@@ -136,8 +106,8 @@ Email: ${profile.getEmail()}
 		"LoginURL":     c.LoginURL,
 		"CookieName":   c.CookieName,
 		"CookieDomain": c.CookieDomain,
-		"Target":       req.URL.String(),
 		"ReqDump":      string(reqDump),
 		"Payload":      payload,
+		"Challenge":    challenge,
 	})
 }
