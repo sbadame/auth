@@ -126,6 +126,10 @@ Email: ${profile.getEmail()}`;
       }
 
       function Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential) {
+        function arrayBufferToStr(buf) {
+            return String.fromCharCode.apply(null, new Uint8Array(buf));
+        }
+        console.log(JSON.parse(arrayBufferToStr(publicKeyCredential.response.clientDataJSON)));
         return STATUS_OK;
       }
 
