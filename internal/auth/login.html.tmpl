@@ -21,14 +21,21 @@ Email: ${profile.getEmail()}`;
     <!-- END Google sign in -->
     <!-- START WebAuthn -->
     <script>
-      const STATUS_OK = {isOk: () => true, message: () => ''};
-
       function arrayToBase64Encoded(dataArray) {
         return btoa(String.fromCharCode(...new Uint8Array(dataArray)));
       }
 
       function base64EncodedToArray(encoded) {
         return Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+      }
+
+      function arrayBufferToStr(buf) {
+          return String.fromCharCode.apply(null, new Uint8Array(buf));
+      }
+
+      function debug_CBORArrayBufferToHex(buf) {
+        // Useful for https://cbor.me/
+        return [...new Uint8Array(buf)].map(x => x.toString(16).padStart(2, '0')).join(' ');
       }
 
       // https://w3c.github.io/webauthn/#sctn-cryptographic-challenges
@@ -54,6 +61,7 @@ Email: ${profile.getEmail()}`;
 
       function Step0_AuthServerResponse() {
         // https://w3c.github.io/webauthn/#dictdef-publickeycredentialcreationoptions
+        // https://w3c.github.io/webauthn/#dictionary-makecredentialoptions
         return {
           challenge: challengeBytes,
           rp: {
@@ -74,6 +82,7 @@ Email: ${profile.getEmail()}`;
             requireResidentKey: false,
             userVerification: 'preferred'
           },
+          attestation: 'direct', // Using the default of 'none' gets you an empty attStmt
           timeout: 60 * 1000,  // 1 minute
           excludeCredentials: [], // No excludeList
           extensions: { exts: true }
@@ -81,7 +90,7 @@ Email: ${profile.getEmail()}`;
       }
 
       async function Step6_AuthServerValidatesResponse(publicKeyCredential) {
-        if (publicKeyCredential.type !== 'public-key') throw "Didn't get a Public Key from credentials.create: " + publicKeyCredential.type;
+        if (publicKeyCredential.type != 'public-key') throw "Didn't get a Public Key from credentials.create: " + publicKeyCredential.type;
         const userId = publicKeyCredential.id;
         const clientData = publicKeyCredential.response.clientDataJSON;
 
@@ -89,7 +98,20 @@ Email: ${profile.getEmail()}`;
         //   1. Verifying that the challenge is the same as the challenge that was sent
         //   2. Ensuring that the origin was the origin expected
         //   3. Validating that the signature over the clientDataHash and the attestation using the certificate chain for that specific model of the authenticator
-        return await fetch(new URL('/verify', window.location.origin));
+        return await fetch(new URL('/verifyNewUser', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            authenticatorAttachment: publicKeyCredential.authenticatorAttachment,
+            id: publicKeyCredential.id,
+            rawId: arrayToBase64Encoded(publicKeyCredential.rawId),
+            type: publicKeyCredential.type,
+            response: {
+              attestationObject: arrayToBase64Encoded(publicKeyCredential.response.attestationObject),
+              clientDataJSON: arrayToBase64Encoded(publicKeyCredential.response.clientDataJSON),
+            }
+          }),
+        });
       }
 
       // https://developer.mozilla.org/en-US/docs/Web/API/Web_Authentication_API#authentication
@@ -103,10 +125,10 @@ Email: ${profile.getEmail()}`;
         console.log('navigator.credentials.get', {publicKey: step0}, publicKeyCredential);
 
         const step6Response = Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential);
-        if (!step6Response.isOk()) {
-           console.log(step6Response.message());
+        if (step6Response.ok) {
+           console.log('Logged in');
         } else {
-           console.log('Logged in', publicKeyCredential.response.clientDataJSON);
+           console.log(step6Response);
         }
       }
 
@@ -125,12 +147,29 @@ Email: ${profile.getEmail()}`;
         };
       }
 
-      function Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential) {
-        function arrayBufferToStr(buf) {
-            return String.fromCharCode.apply(null, new Uint8Array(buf));
-        }
+      async function Step6_AuthServerValidatesResponse_Authenticate(publicKeyCredential) {
         console.log(JSON.parse(arrayBufferToStr(publicKeyCredential.response.clientDataJSON)));
-        return STATUS_OK;
+        // Send data to the server to verify...
+        //   1. Verifying that the challenge is the same as the challenge that was sent
+        //   2. Ensuring that the origin was the origin expected
+        //   3. Validating that the signature over the clientDataHash and the attestation using the certificate chain for that specific model of the authenticator
+        // Match the format proposed in: https://w3c.github.io/webauthn/#dictdef-authenticationresponsejson
+        return await fetch(new URL('/verify', window.location.origin), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            rawId: arrayToBase64Encoded(publicKeyCredential.rawId),
+            response: {
+              clientDataJSON: arrayToBase64Encoded(publicKeyCredential.response.clientDataJSON),
+              authenticatorData: arrayToBase64Encoded(publicKeyCredential.response.authenticatorData),
+              signature: arrayToBase64Encoded(publicKeyCredential.response.signature),
+              userHandle: arrayToBase64Encoded(publicKeyCredential.response.userHandle),
+            },
+            authenticatorAttachment: publicKeyCredential.authenticatorAttachment,
+            clientExtensionResults: publicKeyCredential.clientExtensionResults,
+            type: publicKeyCredential.type,
+          }),
+        });
       }
 
       function hasExistingHistory() {
@@ -138,54 +177,69 @@ Email: ${profile.getEmail()}`;
       }
     </script>
     <!-- END WebAuthn -->
+    <style>
+      body {
+        display: flex;
+        justify-content: center;
+      }
+      h1 {
+        text-align: center;
+      }
+    </style>
   </head>
   <body>
-    <!-- START WebAuthn -->
-    <h1>WebAuthN</h1>
-    <button id="create">Create Account</button>
-    <button id="login">Login</button>
-    <div id="log"></div>
-    <script>
-      document.getElementById('create').onclick = () => {
-        console.log('Create Account');
-        RegisterNewUser();
-      };
+    <section>
+      <!-- START WebAuthn -->
+      <h1>WebAuthN</h1>
+      <button id="create">Create Account</button>
+      <button id="login">Login</button>
+      <div id="log"></div>
+      <script>
+        document.getElementById('create').onclick = () => {
+          console.log('Create Account');
+          RegisterNewUser();
+        };
 
-      document.getElementById('login').onclick = () => {
-        console.log('Login');
-        AuthenticateExistingUser();
-      };
+        document.getElementById('login').onclick = () => {
+          console.log('Login');
+          AuthenticateExistingUser();
+        };
 
-      if (hasExistingHistory()) {
-        document.getElementById('log').innerText = 'There is an existing user: ' + window.localStorage.getItem('userid');
-      } else {
-        document.getElementById('log').innerText = 'No existing user records found.';
-      }
-    </script>
-    <!-- END WebAuthn -->
+        if (hasExistingHistory()) {
+          document.getElementById('log').innerText = 'There is an existing user: ' + window.localStorage.getItem('userid');
+        } else {
+          document.getElementById('log').innerText = 'No existing user records found.';
+        }
+      </script>
+      <!-- END WebAuthn -->
+    </section>
 
-    <!-- START Google -->
-    <!-- https://developers.google.com/identity/gsi/web/tools/configurator -->
-    <!-- https://developers.google.com/identity/gsi/web/guides/migration#the_new_way -->
-    <script src="https://accounts.google.com/gsi/client" async defer></script>
-    <div id="g_id_onload"
-         data-client_id="{{.ClientID}}"
-         data-context="signup"
-         data-ux_mode="popup"
-         data-callback="onSignIn"
-         data-auto_select="true"
-         data-itp_support="true">
-    </div>
-    <div class="g_id_signin"
-         data-type="standard"
-         data-shape="pill"
-         data-theme="filled_black"
-         data-text="signin_with"
-         data-size="small"
-         data-logo_alignment="left">
-    </div>
-<!-- END Google -->
+    <section>
+      <!-- START Google -->
+      <!-- https://developers.google.com/identity/gsi/web/tools/configurator -->
+      <!-- https://developers.google.com/identity/gsi/web/guides/migration#the_new_way -->
+      <h1>Sign in with Google</h1>
+      <script src="https://accounts.google.com/gsi/client" async defer></script>
+      <div id="g_id_onload"
+           data-client_id="{{.ClientID}}"
+           data-context="signup"
+           data-ux_mode="popup"
+           data-callback="onSignIn"
+           data-auto_select="true"
+           data-itp_support="true">
+      </div>
+      <div class="g_id_signin"
+           data-type="standard"
+           data-shape="pill"
+           data-theme="filled_black"
+           data-text="signin_with"
+           data-size="small"
+           data-logo_alignment="left">
+      </div>
+      <!-- END Google -->
+      </section>
 
+    <!--
     <div>
       <h3>Login Data Debug</h3>
       <pre id="loginData"></pre>
@@ -198,5 +252,6 @@ Email: ${profile.getEmail()}`;
       <h3>Payload debug</h3>
       <pre>{{.Payload}}</pre>
     </div>
+    -->
   </body>
 </html>

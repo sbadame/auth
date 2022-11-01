@@ -112,6 +112,9 @@ func main() {
 	http.Handle("/verify", auth.WebAuthNValidateResponseHandler())
 	logger.Printf("Registered /verify for handling WebAuthN Server validation.")
 
+	http.Handle("/verifyNewUser", auth.WebAuthNValidateNewUserHandler())
+	logger.Printf("Registered /verifyNewUser for handling WebAuthN Server validation.")
+
 	http.HandleFunc("/flags", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "<html><body><div style='font-family:monospace'>%s</pre></body></html>", strings.Join(os.Args, "<br>"))
 	}))
