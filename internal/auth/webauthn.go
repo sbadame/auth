@@ -102,7 +102,7 @@ func parseNegInt(b []byte) (int, []byte, error) {
 	if t != typeNegInt {
 		return 0, nil, fmt.Errorf("NegInt type was not passed in, got %b.", b[0])
 	}
-	return 1 - int(b[0]&argsMask), b[1:], nil
+	return -1 - int(b[0]&argsMask), b[1:], nil
 }
 
 func parseBytes(b []byte) ([]byte, []byte, error) {
@@ -216,9 +216,9 @@ func parseMap(b []byte) ([]pair, []byte, error) {
 }
 
 type attestation struct {
-	fmt      string
-	authData []byte
-	attStmt  map[string]interface{}
+	Fmt      string
+	AuthData []byte
+	AttStmt  map[string]interface{}
 }
 
 func decodeAttestation(b []byte) (*attestation, error) {
@@ -239,15 +239,15 @@ func decodeAttestation(b []byte) (*attestation, error) {
 	var a attestation
 	for _, p := range pairs {
 		if p.key == "fmt" {
-			a.fmt = p.value.(string)
+			a.Fmt = p.value.(string)
 		}
 		if p.key == "authData" {
-			a.authData = p.value.([]byte)
+			a.AuthData = p.value.([]byte)
 		}
 		if p.key == "attStmt" {
-			a.attStmt = make(map[string]interface{})
+			a.AttStmt = make(map[string]interface{})
 			for _, p2 := range p.value.([]pair) {
-				a.attStmt[p2.key.(string)] = p2.value
+				a.AttStmt[p2.key.(string)] = p2.value
 			}
 		}
 	}
