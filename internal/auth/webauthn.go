@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,8 +9,11 @@ import (
 	"net/http"
 )
 
+type WebAuthn struct {
+	RpID, Origin string
+}
+
 func WebAuthNValidateResponseHandler() http.Handler { return http.HandlerFunc(validateResponse) }
-func WebAuthNValidateNewUserHandler() http.Handler  { return http.HandlerFunc(validateNewUser) }
 
 // https://w3c.github.io/webauthn/#dictdef-authenticationresponsejson
 
@@ -95,7 +99,11 @@ func decodeAttestation(b []byte) (*attestation, error) {
 	return &a, nil
 }
 
-func validateNewUser(w http.ResponseWriter, r *http.Request) {
+func (w *WebAuthn) NewUserHandler() http.HandlerFunc {
+	return http.HandlerFunc(w.validateNewUser)
+}
+
+func (web *WebAuthn) validateNewUser(w http.ResponseWriter, r *http.Request) {
 	// https://w3c.github.io/webauthn/#sctn-registering-a-new-credential
 	if r.Method != "POST" {
 		http.Error(w, "Only POST is allowed for this request.", http.StatusMethodNotAllowed)
@@ -120,10 +128,102 @@ func validateNewUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if _, err := decodeAttestation(pkCredential.Response.AttestationObject); err != nil {
+	// Step 7
+	if cd.Type != "webauthn.create" {
+		http.Error(w, fmt.Sprintf("Client data type was not webauthn.create, instead got %s", cd.Type), http.StatusBadRequest)
+		return
+	}
+
+	// Step 8
+	// TODO: Verify the the base64 encoding of cd.Challenge is the same as the challenge given.
+
+	// Step 9
+	if cd.Origin != web.Origin {
+		http.Error(w, fmt.Sprintf("Client origin is not %s, instead got %s", web.Origin, cd.Origin), http.StatusBadRequest)
+		return
+	}
+
+	// Step 11
+	a, err := decodeAttestation(pkCredential.Response.AttestationObject)
+	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
+
+	// Step 12
+	// https://w3c.github.io/webauthn/#authenticator-data
+	if *(*[32]byte)(a.AuthData[0:32]) != sha256.Sum256([]byte(web.RpID)) {
+		http.Error(w, fmt.Sprintf("rpIdHash is not for Rp ID: %s", web.RpID), http.StatusBadRequest)
+		return
+	}
+
+	// Step 17
+	if a.AttStmt["alg"] != -7 && a.AttStmt["alg"] != -257 {
+		http.Error(w, fmt.Sprintf("alg is not ES256 or RS256 (-7 or -257), got %v", a.AttStmt), http.StatusBadRequest)
+		return
+	}
+
+	// Step 18
+	// TODO: Verify client extension outputs.
+
+	// Step 19
+	// https://www.iana.org/assignments/webauthn/webauthn.xhtml has the list of approved formats.
+	// Right now, I only support "packed" and "none"
+	if a.Fmt != "packed" && a.Fmt != "none" {
+		http.Error(w, "packed or none are the only supported formats.", http.StatusBadRequest)
+		return
+	}
+
+	// Step 20
+	// Perform the verification steps defined by `packed` or `none`.
+	// https://w3c.github.io/webauthn/#sctn-packed-attestation
+
+	// Step 21 (Step 1)
+	_, ok := a.AttStmt["alg"]
+	if !ok {
+		http.Error(w, fmt.Sprintf("No alg defined in the AttStmt: %v\n", a.AttStmt), http.StatusBadRequest)
+		return
+	}
+
+	_, ok = a.AttStmt["sig"]
+	if !ok {
+		http.Error(w, fmt.Sprintf("No sig defined in the AttStmt: %v\n", a.AttStmt), http.StatusBadRequest)
+		return
+	}
+
+	x5c := a.AttStmt["x5c"]
+	if x5c != nil {
+		b, ok := x5c.([]interface{})
+		if !ok {
+			http.Error(w, "Expected x5c to be an array.", http.StatusBadRequest)
+			return
+		}
+
+		if len(b) != 1 {
+			http.Error(w, fmt.Sprintf("Expected x5c to be an array with a single entry. (%d)", len(b)), http.StatusBadRequest)
+			return
+		}
+
+		der, ok := b[0].([]byte)
+		if !ok {
+			http.Error(w, "Expected x5c[0] to be a byte string.", http.StatusBadRequest)
+			return
+		}
+
+		// I'm not really sure if it makes sense to verify that this really came from a YubiKey
+		// but it's fun, lets see how far I can go...
+		err = VerifyYubikeyCert(der)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+	} else {
+		// x5c not in use, instead https://w3c.github.io/webauthn/#self-attestation
+	}
+
+	// Step 22
+	// Assess the trustworthyness of the attestation from Step 20 to check that the key chains to a trusted root.
 
 	w.Header().Set("Content-Type", "application/json")
 	fmt.Fprintln(w, "{}")

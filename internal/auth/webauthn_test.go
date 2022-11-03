@@ -12,16 +12,18 @@ import (
 )
 
 func TestWebAuthNValidateNewUserHandler(t *testing.T) {
-	ts := httptest.NewServer(WebAuthNValidateNewUserHandler())
+	w := WebAuthn{"localhost", "http://localhost:8091"}
+	ts := httptest.NewServer(w.NewUserHandler())
 	defer ts.Close()
 
-	const body = `{"authenticatorAttachment":"cross-platform","id":"fE2qbackemPsxMSMclU39wBiPub2yGVs0Cx9yMwUK6KNjb1hBfL4XD-By7svlnU34tiZ5fBFFSlJOlx2nMgDlQ","rawId":"fE2qbackemPsxMSMclU39wBiPub2yGVs0Cx9yMwUK6KNjb1hBfL4XD+By7svlnU34tiZ5fBFFSlJOlx2nMgDlQ==","type":"public-key","response":{"attestationObject":"o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVjESZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2NBAAAAAgAAAAAAAAAAAAAAAAAAAAAAQHxNqm2nJHpj7MTEjHJVN/cAYj7m9shlbNAsfcjMFCuijY29YQXy+Fw/gcu7L5Z1N+LYmeXwRRUpSTpcdpzIA5WlAQIDJiABIVggKpAVTOPtbIHWwhn8+aLttWIgUi/LjnXUyfpwUBf+q4IiWCBTZEjt1MYcXSIn1cuIlpvqU5SH+ioqbyfQlBXRd0vtig==","clientDataJSON":"eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoibFdiSFRSQURmRTE3dXdRSDBlTEdTUSIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA5MSIsImNyb3NzT3JpZ2luIjpmYWxzZX0="}}`
+	const body = `{"authenticatorAttachment":"cross-platform","id":"K-tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS-qlV7lld8u_Fl73AIaGaRS0s880erEAYiz_EnsSc_wG4eahZx77Ew","rawId":"K+tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS+qlV7lld8u/Fl73AIaGaRS0s880erEAYiz/EnsSc/wG4eahZx77Ew==","type":"public-key","response":{"attestationObject":"o2NmbXRmcGFja2VkZ2F0dFN0bXSjY2FsZyZjc2lnWEYwRAIgJWJaXrM0nyJze8LyZQHFoRzK/7NuYLuPh45oQ5YlQw8CIGsGH9g16G6QZuEsw0hQR8XcpMMnFQKJVsAgIlezzO94Y3g1Y4FZAt0wggLZMIIBwaADAgECAgkA1VucaJeiyogwDQYJKoZIhvcNAQELBQAwLjEsMCoGA1UEAxMjWXViaWNvIFUyRiBSb290IENBIFNlcmlhbCA0NTcyMDA2MzEwIBcNMTQwODAxMDAwMDAwWhgPMjA1MDA5MDQwMDAwMDBaMG8xCzAJBgNVBAYTAlNFMRIwEAYDVQQKDAlZdWJpY28gQUIxIjAgBgNVBAsMGUF1dGhlbnRpY2F0b3IgQXR0ZXN0YXRpb24xKDAmBgNVBAMMH1l1YmljbyBVMkYgRUUgU2VyaWFsIDE3NTUwNzc1ODkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQBBqnQf+pZ/suj36ofxePar4S034P+M7QlbF+jJp8B1BFwgciFQyLGq2oH193kz3kvQXjNLs+9t7kQgD+2ezudo4GBMH8wEwYKKwYBBAGCxAoNAQQFBAMFBAMwIgYJKwYBBAGCxAoCBBUxLjMuNi4xLjQuMS40MTQ4Mi4xLjcwEwYLKwYBBAGC5RwCAQEEBAMCBSAwIQYLKwYBBAGC5RwBAQQEEgQQ7ogoeXIcSROXdT38zpcHKjAMBgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQCENMr66hfI1Qq/M+T6ZONHKRqQZ8nHoJdYkckBH/N2QdAdo0D5IHzPdraWaf2wEojb/71Pc9qyPiBppeJDGo5duJ+nwi/mfPusq2aYy66v+7j5cyQ6j7At1m9yPCP6NZ1fR1oUaZFTRhyTi1jDr5j+En8vyY1P8527aOpjf75aVnxP0f5z0FiHPd0bUwKJClgf+3DmzPQte5IWsze0X/TIR6GC3APAA1vL04bsqpR/s7QCu+kFwUU+PyUl//X/qpeTAVJjFlnMpcfA2y6YR2kHuKz5fozixYb91yXqayP6FB21anGiQJbPKZ2VQbmaTnjW+3OqkyMzpS9ESDXBaOheaGF1dGhEYXRhWMRJlg3liA6MaHQ0Fw9kdmBbj+SuuaKGMseZXPO6gx2XY0EAAAAB7ogoeXIcSROXdT38zpcHKgBAK+tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS+qlV7lld8u/Fl73AIaGaRS0s880erEAYiz/EnsSc/wG4eahZx77E6UBAgMmIAEhWCANiQ9dX3eVHmd5JPk3kjzvPxM0762hhmPRFG6c6EgmBCJYIDAVggUYW9AFxXWlzNyW/dpGyIiBVmzO085fwOS0ugyg","clientDataJSON":"eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiVXYzOEJ5R0NaVThXUDE4UG1tSWRjZyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA5MSIsImNyb3NzT3JpZ2luIjpmYWxzZX0="}}`
 	r, err := http.Post(ts.URL, "application/json", strings.NewReader(body))
 	if err != nil {
 		t.Error(err)
 	}
 	if r.StatusCode != 200 {
-		t.Errorf("wanted r.StatusCode == 200 got %d", r.StatusCode)
+		body, _ := io.ReadAll(r.Body)
+		t.Errorf("wanted r.StatusCode == 200 got %d\nHTTP Response: %s", r.StatusCode, body)
 	}
 
 	var output map[string]interface{}
