@@ -16,25 +16,31 @@ func TestWebAuthNValidateNewUserHandler(t *testing.T) {
 	ts := httptest.NewServer(w.NewUserHandler())
 	defer ts.Close()
 
-	const body = `{"authenticatorAttachment":"cross-platform","id":"K-tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS-qlV7lld8u_Fl73AIaGaRS0s880erEAYiz_EnsSc_wG4eahZx77Ew","rawId":"K+tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS+qlV7lld8u/Fl73AIaGaRS0s880erEAYiz/EnsSc/wG4eahZx77Ew==","type":"public-key","response":{"attestationObject":"o2NmbXRmcGFja2VkZ2F0dFN0bXSjY2FsZyZjc2lnWEYwRAIgJWJaXrM0nyJze8LyZQHFoRzK/7NuYLuPh45oQ5YlQw8CIGsGH9g16G6QZuEsw0hQR8XcpMMnFQKJVsAgIlezzO94Y3g1Y4FZAt0wggLZMIIBwaADAgECAgkA1VucaJeiyogwDQYJKoZIhvcNAQELBQAwLjEsMCoGA1UEAxMjWXViaWNvIFUyRiBSb290IENBIFNlcmlhbCA0NTcyMDA2MzEwIBcNMTQwODAxMDAwMDAwWhgPMjA1MDA5MDQwMDAwMDBaMG8xCzAJBgNVBAYTAlNFMRIwEAYDVQQKDAlZdWJpY28gQUIxIjAgBgNVBAsMGUF1dGhlbnRpY2F0b3IgQXR0ZXN0YXRpb24xKDAmBgNVBAMMH1l1YmljbyBVMkYgRUUgU2VyaWFsIDE3NTUwNzc1ODkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQBBqnQf+pZ/suj36ofxePar4S034P+M7QlbF+jJp8B1BFwgciFQyLGq2oH193kz3kvQXjNLs+9t7kQgD+2ezudo4GBMH8wEwYKKwYBBAGCxAoNAQQFBAMFBAMwIgYJKwYBBAGCxAoCBBUxLjMuNi4xLjQuMS40MTQ4Mi4xLjcwEwYLKwYBBAGC5RwCAQEEBAMCBSAwIQYLKwYBBAGC5RwBAQQEEgQQ7ogoeXIcSROXdT38zpcHKjAMBgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQCENMr66hfI1Qq/M+T6ZONHKRqQZ8nHoJdYkckBH/N2QdAdo0D5IHzPdraWaf2wEojb/71Pc9qyPiBppeJDGo5duJ+nwi/mfPusq2aYy66v+7j5cyQ6j7At1m9yPCP6NZ1fR1oUaZFTRhyTi1jDr5j+En8vyY1P8527aOpjf75aVnxP0f5z0FiHPd0bUwKJClgf+3DmzPQte5IWsze0X/TIR6GC3APAA1vL04bsqpR/s7QCu+kFwUU+PyUl//X/qpeTAVJjFlnMpcfA2y6YR2kHuKz5fozixYb91yXqayP6FB21anGiQJbPKZ2VQbmaTnjW+3OqkyMzpS9ESDXBaOheaGF1dGhEYXRhWMRJlg3liA6MaHQ0Fw9kdmBbj+SuuaKGMseZXPO6gx2XY0EAAAAB7ogoeXIcSROXdT38zpcHKgBAK+tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS+qlV7lld8u/Fl73AIaGaRS0s880erEAYiz/EnsSc/wG4eahZx77E6UBAgMmIAEhWCANiQ9dX3eVHmd5JPk3kjzvPxM0762hhmPRFG6c6EgmBCJYIDAVggUYW9AFxXWlzNyW/dpGyIiBVmzO085fwOS0ugyg","clientDataJSON":"eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiVXYzOEJ5R0NaVThXUDE4UG1tSWRjZyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA5MSIsImNyb3NzT3JpZ2luIjpmYWxzZX0="}}`
-	r, err := http.Post(ts.URL, "application/json", strings.NewReader(body))
-	if err != nil {
-		t.Error(err)
+	tests := map[string]string{
+		"attestation=direct": `{"authenticatorAttachment":"cross-platform","id":"K-tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS-qlV7lld8u_Fl73AIaGaRS0s880erEAYiz_EnsSc_wG4eahZx77Ew","rawId":"K+tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS+qlV7lld8u/Fl73AIaGaRS0s880erEAYiz/EnsSc/wG4eahZx77Ew==","type":"public-key","response":{"attestationObject":"o2NmbXRmcGFja2VkZ2F0dFN0bXSjY2FsZyZjc2lnWEYwRAIgJWJaXrM0nyJze8LyZQHFoRzK/7NuYLuPh45oQ5YlQw8CIGsGH9g16G6QZuEsw0hQR8XcpMMnFQKJVsAgIlezzO94Y3g1Y4FZAt0wggLZMIIBwaADAgECAgkA1VucaJeiyogwDQYJKoZIhvcNAQELBQAwLjEsMCoGA1UEAxMjWXViaWNvIFUyRiBSb290IENBIFNlcmlhbCA0NTcyMDA2MzEwIBcNMTQwODAxMDAwMDAwWhgPMjA1MDA5MDQwMDAwMDBaMG8xCzAJBgNVBAYTAlNFMRIwEAYDVQQKDAlZdWJpY28gQUIxIjAgBgNVBAsMGUF1dGhlbnRpY2F0b3IgQXR0ZXN0YXRpb24xKDAmBgNVBAMMH1l1YmljbyBVMkYgRUUgU2VyaWFsIDE3NTUwNzc1ODkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQBBqnQf+pZ/suj36ofxePar4S034P+M7QlbF+jJp8B1BFwgciFQyLGq2oH193kz3kvQXjNLs+9t7kQgD+2ezudo4GBMH8wEwYKKwYBBAGCxAoNAQQFBAMFBAMwIgYJKwYBBAGCxAoCBBUxLjMuNi4xLjQuMS40MTQ4Mi4xLjcwEwYLKwYBBAGC5RwCAQEEBAMCBSAwIQYLKwYBBAGC5RwBAQQEEgQQ7ogoeXIcSROXdT38zpcHKjAMBgNVHRMBAf8EAjAAMA0GCSqGSIb3DQEBCwUAA4IBAQCENMr66hfI1Qq/M+T6ZONHKRqQZ8nHoJdYkckBH/N2QdAdo0D5IHzPdraWaf2wEojb/71Pc9qyPiBppeJDGo5duJ+nwi/mfPusq2aYy66v+7j5cyQ6j7At1m9yPCP6NZ1fR1oUaZFTRhyTi1jDr5j+En8vyY1P8527aOpjf75aVnxP0f5z0FiHPd0bUwKJClgf+3DmzPQte5IWsze0X/TIR6GC3APAA1vL04bsqpR/s7QCu+kFwUU+PyUl//X/qpeTAVJjFlnMpcfA2y6YR2kHuKz5fozixYb91yXqayP6FB21anGiQJbPKZ2VQbmaTnjW+3OqkyMzpS9ESDXBaOheaGF1dGhEYXRhWMRJlg3liA6MaHQ0Fw9kdmBbj+SuuaKGMseZXPO6gx2XY0EAAAAB7ogoeXIcSROXdT38zpcHKgBAK+tYJlDMN27O7mpfPpKIJAXhXtwN6T3YS+qlV7lld8u/Fl73AIaGaRS0s880erEAYiz/EnsSc/wG4eahZx77E6UBAgMmIAEhWCANiQ9dX3eVHmd5JPk3kjzvPxM0762hhmPRFG6c6EgmBCJYIDAVggUYW9AFxXWlzNyW/dpGyIiBVmzO085fwOS0ugyg","clientDataJSON":"eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiVXYzOEJ5R0NaVThXUDE4UG1tSWRjZyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA5MSIsImNyb3NzT3JpZ2luIjpmYWxzZX0="}}`,
+		"attestation=none":   `{"authenticatorAttachment":"cross-platform","id":"biRc95p_2Hsh1s-vGfZdn1SQ-jdBVXMWjL3gCiwoOrsKwgBB3a0N6ZkxxquAOz7EKWgSsn0vbAe4VpQ8svKFEw","rawId":"biRc95p/2Hsh1s+vGfZdn1SQ+jdBVXMWjL3gCiwoOrsKwgBB3a0N6ZkxxquAOz7EKWgSsn0vbAe4VpQ8svKFEw==","type":"public-key","response":{"clientDataJSON":"eyJ0eXBlIjoid2ViYXV0aG4uY3JlYXRlIiwiY2hhbGxlbmdlIjoiVXYzOEJ5R0NaVThXUDE4UG1tSWRjZyIsIm9yaWdpbiI6Imh0dHA6Ly9sb2NhbGhvc3Q6ODA5MSIsImNyb3NzT3JpZ2luIjpmYWxzZX0=","attestationObject":"o2NmbXRkbm9uZWdhdHRTdG10oGhhdXRoRGF0YVjESZYN5YgOjGh0NBcPZHZgW4/krrmihjLHmVzzuoMdl2NBAAAAAwAAAAAAAAAAAAAAAAAAAAAAQG4kXPeaf9h7IdbPrxn2XZ9UkPo3QVVzFoy94AosKDq7CsIAQd2tDemZMcargDs+xCloErJ9L2wHuFaUPLLyhROlAQIDJiABIVggcVC8hlA2GwJA/3y59bCBdclMV5KNckxCJif7Mxzp+UUiWCAzseCuA9/yfdGBK+yIuMZ9MyyJi8q3psvu3uRM9m9shw==","publicKey":"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEcVC8hlA2GwJA/3y59bCBdclMV5KNckxCJif7Mxzp+UUzseCuA9/yfdGBK+yIuMZ9MyyJi8q3psvu3uRM9m9shw==","publicKeyAlgorithm":-7}}`,
 	}
-	if r.StatusCode != 200 {
-		body, _ := io.ReadAll(r.Body)
-		t.Errorf("wanted r.StatusCode == 200 got %d\nHTTP Response: %s", r.StatusCode, body)
-	}
+	for name, body := range tests {
 
-	var output map[string]interface{}
-	dec := json.NewDecoder(r.Body)
-	if err = dec.Decode(&output); err != nil && err != io.EOF {
-		t.Error(err)
-	}
-	r.Body.Close()
+		r, err := http.Post(ts.URL, "application/json", strings.NewReader(body))
+		if err != nil {
+			t.Error(err)
+		}
+		if r.StatusCode != 200 {
+			body, _ := io.ReadAll(r.Body)
+			t.Errorf("%s: wanted r.StatusCode == 200 got %d\nHTTP Response: %s", name, r.StatusCode, body)
+		}
 
-	if len(output) != 0 {
-		t.Errorf("wanted {}, got: %v", output)
+		var output map[string]interface{}
+		dec := json.NewDecoder(r.Body)
+		if err = dec.Decode(&output); err != nil && err != io.EOF {
+			t.Error(err)
+		}
+		r.Body.Close()
+
+		if len(output) != 0 {
+			t.Errorf("%s: wanted {}, got: %v", name, output)
+		}
 	}
 }
 

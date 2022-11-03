@@ -82,7 +82,7 @@ Email: ${profile.getEmail()}`;
             requireResidentKey: false,
             userVerification: 'preferred'
           },
-          attestation: 'direct', // Using the default of 'none' gets you an empty attStmt
+          attestation: 'none', // None, means that you don't get an attestation to verify the specific hardware used.  Use 'direct' to get an attestation to verify the hardware.
           timeout: 60 * 1000,  // 1 minute
           excludeCredentials: [], // No excludeList
           extensions: { exts: true }
@@ -106,9 +106,15 @@ Email: ${profile.getEmail()}`;
             id: publicKeyCredential.id,
             rawId: arrayToBase64Encoded(publicKeyCredential.rawId),
             type: publicKeyCredential.type,
+
             response: {
-              attestationObject: arrayToBase64Encoded(publicKeyCredential.response.attestationObject),
+              // https://w3c.github.io/webauthn/#authenticatorresponse
               clientDataJSON: arrayToBase64Encoded(publicKeyCredential.response.clientDataJSON),
+
+              // https://w3c.github.io/webauthn/#authenticatorattestationresponse
+              attestationObject: arrayToBase64Encoded(publicKeyCredential.response.attestationObject),
+              publicKey: arrayToBase64Encoded(publicKeyCredential.response.getPublicKey()),
+              publicKeyAlgorithm: publicKeyCredential.response.getPublicKeyAlgorithm(),
             }
           }),
         });

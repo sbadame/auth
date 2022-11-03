@@ -99,6 +99,9 @@ func main() {
 	}
 	logger.Printf("Domain configuration: %+v", &domainConfig)
 
+	webAuthn := auth.WebAuthn{"localhost", "http://localhost:" + port}
+	logger.Printf("WebAuthn configuration: %+v", &webAuthn)
+
 	http.HandleFunc("/", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintln(w, "Welcome to the auth server.")
 	}))
@@ -112,7 +115,7 @@ func main() {
 	http.Handle("/verify", auth.WebAuthNValidateResponseHandler())
 	logger.Printf("Registered /verify for handling WebAuthN Server validation.")
 
-	http.Handle("/verifyNewUser", auth.WebAuthNValidateNewUserHandler())
+	http.Handle("/verifyNewUser", webAuthn.NewUserHandler())
 	logger.Printf("Registered /verifyNewUser for handling WebAuthN Server validation.")
 
 	http.HandleFunc("/flags", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

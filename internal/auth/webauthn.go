@@ -2,6 +2,7 @@ package auth
 
 import (
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -48,8 +49,11 @@ type clientData struct {
 }
 
 type authenticatorAttestationResponseJSON struct {
-	AttestationObject []byte `json:"attestationObject"`
-	ClientDataJSON    []byte `json:"clientDataJSON"`
+	ClientDataJSON []byte `json:"clientDataJSON"`
+
+	AttestationObject  []byte `json:"attestationObject"`
+	PublicKey          []byte `json:"publicKey"`
+	PublicKeyAlgorithm int    `json:"publicKeyAlgorithm"`
 }
 
 type publicKeyCredentialJSON struct {
@@ -152,13 +156,22 @@ func (web *WebAuthn) validateNewUser(w http.ResponseWriter, r *http.Request) {
 
 	// Step 12
 	// https://w3c.github.io/webauthn/#authenticator-data
-	if *(*[32]byte)(a.AuthData[0:32]) != sha256.Sum256([]byte(web.RpID)) {
+	rpidHash := *(*[32]byte)(a.AuthData[0:32])
+	if rpidHash != sha256.Sum256([]byte(web.RpID)) {
 		http.Error(w, fmt.Sprintf("rpIdHash is not for Rp ID: %s", web.RpID), http.StatusBadRequest)
 		return
 	}
 
+	// TODO: Actually consider these considerations: https://w3c.github.io/webauthn/#sctn-credential-backup
+
 	// Step 17
-	if a.AttStmt["alg"] != -7 && a.AttStmt["alg"] != -257 {
+	// I'm not sure whether this what I'm actually supposed to do, but it's hard to support self-attestation and
+	// direct...
+	alg := a.AttStmt["alg"]
+	if alg == nil {
+		alg = pkCredential.Response.PublicKeyAlgorithm
+	}
+	if alg != -7 && alg != -257 {
 		http.Error(w, fmt.Sprintf("alg is not ES256 or RS256 (-7 or -257), got %v", a.AttStmt), http.StatusBadRequest)
 		return
 	}
@@ -178,21 +191,33 @@ func (web *WebAuthn) validateNewUser(w http.ResponseWriter, r *http.Request) {
 	// Perform the verification steps defined by `packed` or `none`.
 	// https://w3c.github.io/webauthn/#sctn-packed-attestation
 
+	if a.Fmt == "none" {
+		_, err := x509.ParsePKIXPublicKey(pkCredential.Response.PublicKey)
+		if err != nil {
+			http.Error(w, "Failed to parse public key: "+err.Error(), http.StatusBadRequest)
+			return
+		}
+	}
+
 	// Step 21 (Step 1)
-	_, ok := a.AttStmt["alg"]
-	if !ok {
-		http.Error(w, fmt.Sprintf("No alg defined in the AttStmt: %v\n", a.AttStmt), http.StatusBadRequest)
-		return
-	}
+	if a.Fmt == "packed" {
+		_, ok := a.AttStmt["alg"]
+		if !ok {
+			http.Error(w, fmt.Sprintf("No alg defined in the AttStmt: %v\n", a.AttStmt), http.StatusBadRequest)
+			return
+		}
 
-	_, ok = a.AttStmt["sig"]
-	if !ok {
-		http.Error(w, fmt.Sprintf("No sig defined in the AttStmt: %v\n", a.AttStmt), http.StatusBadRequest)
-		return
-	}
+		sig, ok := a.AttStmt["sig"]
+		if !ok {
+			http.Error(w, fmt.Sprintf("No sig defined in the AttStmt: %v\n", a.AttStmt), http.StatusBadRequest)
+			return
+		}
 
-	x5c := a.AttStmt["x5c"]
-	if x5c != nil {
+		x5c, ok := a.AttStmt["x5c"]
+		if !ok {
+			http.Error(w, fmt.Sprintf("No x5c defined in the AttStmt: %v\n", a.AttStmt), http.StatusBadRequest)
+			return
+		}
 		b, ok := x5c.([]interface{})
 		if !ok {
 			http.Error(w, "Expected x5c to be an array.", http.StatusBadRequest)
@@ -212,14 +237,28 @@ func (web *WebAuthn) validateNewUser(w http.ResponseWriter, r *http.Request) {
 
 		// I'm not really sure if it makes sense to verify that this really came from a YubiKey
 		// but it's fun, lets see how far I can go...
-		err = VerifyYubikeyCert(der)
+		cert, err := x509.ParseCertificate(der)
 		if err != nil {
+			http.Error(w, fmt.Sprintf("Unable to parse x509 cert: %s", der), http.StatusBadRequest)
+			return
+		}
+
+		if err = VerifyYubikeyCert(*cert); err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
 
-	} else {
-		// x5c not in use, instead https://w3c.github.io/webauthn/#self-attestation
+		clientDataHash := sha256.Sum256(pkCredential.Response.ClientDataJSON)
+
+		signedData := make([]byte, 0)
+		signedData = append(signedData, a.AuthData...)
+		signedData = append(signedData, clientDataHash[:]...)
+
+		if err = cert.CheckSignature(x509.ECDSAWithSHA256, signedData, sig.([]byte)); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
 	}
 
 	// Step 22

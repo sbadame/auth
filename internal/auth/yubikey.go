@@ -28,11 +28,7 @@ U9psmyPzK+Vsgw2jeRQ5JlKDyqE0hebfC1tvFu0CCrJFcw==
 -----END CERTIFICATE-----
 `
 
-func VerifyYubikeyCert(der []byte) error {
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return fmt.Errorf("Unable to parse x509 cert: %s", der)
-	}
+func VerifyYubikeyCert(cert x509.Certificate) error {
 
 	// https://w3c.github.io/webauthn/#sctn-packed-attestation-cert-requirements
 	if cert.Version != 3 {
@@ -48,7 +44,7 @@ func VerifyYubikeyCert(der []byte) error {
 		return errors.New("Unable to append yubikey pem.")
 	}
 
-	_, err = cert.Verify(x509.VerifyOptions{
+	_, err := cert.Verify(x509.VerifyOptions{
 		Roots: pool,
 	})
 	if err != nil {
